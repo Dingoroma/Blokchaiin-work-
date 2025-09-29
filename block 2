@@ -1,0 +1,59 @@
+import hashlib
+import time
+import json
+from typing import List
+from ecdsa import SigningKey, SECP256k1, VerifyingKey, BadSignatureError
+
+class Transaction:
+    def __init__(self, sender, recipient, amount, signature=None):
+        self.sender = sender
+        self.recipient = recipient
+        self.amount = amount
+        self.signature = signature
+
+    def to_dict(self):
+        return {
+            'sender': self.sender,
+            'recipient': self.recipient,
+            'amount': self.amount,
+        }
+
+    def sign(self, private_key):
+        sk = SigningKey.from_string(bytes.fromhex(private_key), curve=SECP256k1)
+        message = json.dumps(self.to_dict(), sort_keys=True).encode()
+        self.signature = sk.sign(message).hex()
+
+    def is_valid(self):
+        if self.sender == "NETWORK":  # mining reward
+            return True
+        if not self.signature:
+            return False
+        vk = VerifyingKey.from_string(bytes.fromhex(self.sender), curve=SECP256k1)
+        try:
+            vk.verify(bytes.fromhex(self.signature), json.dumps(self.to_dict(), sort_keys=True).encode())
+            return True
+        except BadSignatureError:
+            return False
+
+class Block:
+    def __init__(self, previous_hash, transactions: List[Transaction], nonce=0):
+        self.previous_hash = previous_hash
+        self.timestamp = time.time()
+        self.transactions = transactions
+        self.nonce = nonce
+        self.hash = self.compute_hash()
+
+    def compute_hash(self):
+        block_string = json.dumps({
+            "previous_hash": self.previous_hash,
+            "timestamp": self.timestamp,
+            "transactions": [tx.__dict__ for tx in self.transactions],
+            "nonce": self.nonce
+        }, sort_keys=True).encode()
+        return hashlib.sha256(block_string).hexdigest()
+
+class Blockchain:
+    def __init__(self):
+        self.chain = []
+        self.pending_transactions = []
+
